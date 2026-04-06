@@ -8,6 +8,7 @@ import {
 
 import ProductForm from './pages/ProductForm';
 import ProductList from './pages/ProductList';
+import SalesHistory from './pages/SalesHistory';
 
 const Home = () => (
   <div className="text-center mt-5">
@@ -19,8 +20,17 @@ const Home = () => (
 
 export default function App() {
   return (
-    <div className="bg-light" style={{ maxWidth: "420px", margin: "auto", minHeight: "100vh", display: "flex", flexDirection: "column", position: "relative" }}>
-      
+    <div
+      className="bg-light"
+      style={{
+        maxWidth: "420px",
+        margin: "auto",
+        minHeight: "100vh",
+        display: "flex",
+        flexDirection: "column",
+        position: "relative",
+      }}
+    >
       <div className="bg-primary text-white text-center py-3 fw-bold shadow">
         📱 Asad Mobile Shop
       </div>
@@ -28,15 +38,20 @@ export default function App() {
       <div style={{ flex: 1, overflowY: "auto", padding: "15px", paddingBottom: "80px" }}>
         <Routes>
           <Route path="/" element={<Home />} />
-          <Route path="/add" element={<ProductForm/>} />
-          <Route path="/list" element={<ProductList/>} />
+          <Route path="/add" element={<ProductForm />} />
+          <Route path="/list" element={<ProductList />} />
+          <Route path="/sales" element={<SalesHistory />} />
         </Routes>
       </div>
 
-      <div className="bg-white border-top d-flex justify-content-around py-2 position-fixed bottom-0 w-100" style={{ maxWidth: "420px" }}>
+      <div
+        className="bg-white border-top d-flex justify-content-around py-2 position-fixed bottom-0 w-100"
+        style={{ maxWidth: "420px" }}
+      >
         <Link to="/" className="btn btn-link text-decoration-none text-dark">🏠 Home</Link>
         <Link to="/add" className="btn btn-link text-decoration-none text-dark">➕ Add</Link>
         <Link to="/list" className="btn btn-link text-decoration-none text-dark">📊 Products</Link>
+        <Link to="/sales" className="btn btn-link text-decoration-none text-dark">💰 Sales</Link> {/* New Link */}
       </div>
     </div>
   );

@@ -7,227 +7,232 @@ import React, {
 import axios from 'axios';
 import Swal from 'sweetalert2';
 
-// Vite-specific environment variable access
 const API = import.meta.env.VITE_API_URL;
 
 export default function ProductList() {
   const [modelGroups, setModelGroups] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [loadingModel, setLoadingModel] = useState(null); 
   const [expandedModel, setExpandedModel] = useState(null);
+  const [stats, setStats] = useState({
+    totalQty: 0,
+    totalInvestment: 0,
+    totalPotentialRevenue: 0,
+    totalProfit: 0,
+  });
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+  const [search, setSearch] = useState("");
+  const [dates, setDates] = useState({ start: "", end: "" });
 
-  // Stats for the Blue Sticky Header
-  const [dbTotalQty, setDbTotalQty] = useState(0);
-  const [dbTotalValue, setDbTotalValue] = useState(0);
-
-  // 1. Initial Load
-  const loadInitialData = useCallback(async () => {
+  // Combined fetch function for initial load, search, and infinite scroll
+  const fetchData = useCallback(async (pageNum, isNewSearch = false) => {
+    if (loading) return;
     setLoading(true);
     try {
-      const res = await axios.get(`${API}/products/grouped`);
-      setDbTotalQty(res.data.global.totalQty);
-      setDbTotalValue(res.data.global.totalValue);
-      setModelGroups(res.data.groupedData);
-    } catch (error) {
-      // Swapped toast for Swal
-      console.error(error);
-      Swal.fire({
-        icon: 'error',
-        title: 'Fetch Failed',
-        text: 'Could not load inventory data.',
-        toast: true,
-        position: 'top-end',
-        showConfirmButton: false,
-        timer: 3000
+      const res = await axios.get(`${API}/products/grouped`, {
+        params: { 
+            page: pageNum, 
+            search, 
+            startDate: dates.start, 
+            endDate: dates.end 
+        },
       });
+
+      const newData = res.data.groupedData;
+      setStats(res.data.global);
+      
+      // If it's a new search/filter, replace data. If scrolling, append.
+      setModelGroups(prev => isNewSearch ? newData : [...prev, ...newData]);
+      setHasMore(newData.length === 5);
+    } catch (e) {
+      console.error("Fetch Error:", e);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [search, dates, loading]);
 
+  // Trigger search/filter reset
   useEffect(() => {
-    loadInitialData();
-  }, [loadInitialData]);
+    setPage(1);
+    fetchData(1, true);
+  }, [search, dates]);
 
-  // 2. Load More Units
-  const handleLoadMoreUnits = async (modelName) => {
-    const currentModel = modelGroups.find(g => g._id === modelName);
-    const skipCount = currentModel.items.length;
+  const handleScroll = (e) => {
+    const { scrollTop, clientHeight, scrollHeight } = e.currentTarget;
+    // Load more when 50px from bottom
+    if (scrollHeight - scrollTop <= clientHeight + 50 && hasMore && !loading) {
+      const nextPage = page + 1;
+      setPage(nextPage);
+      fetchData(nextPage, false);
+    }
+  };
 
-    setLoadingModel(modelName);
-    try {
-      const res = await axios.get(
-        `${API}/products/model-details?model=${modelName}&skip=${skipCount}&limit=5`,
-      );
+  const formatDate = (date) =>
+    new Date(date).toLocaleDateString("en-GB", { 
+        day: "numeric", 
+        month: "long", 
+        year: "numeric" 
+    });
 
-      if (res.data.length > 0) {
-        setModelGroups(prev =>
-          prev.map(group => {
-            if (group._id === modelName) {
-              return { ...group, items: [...group.items, ...res.data] };
-            }
-            return group;
-          })
-        );
+  const handleSell = async (item) => {
+    const { value: finalPrice } = await Swal.fire({
+      title: "Confirm Sale",
+      text: `Selling ${item.model} (${item.imei})`,
+      input: "number",
+      inputLabel: "Final Sale Price (PKR)",
+      inputValue: item.sellPrice,
+      showCancelButton: true,
+      confirmButtonText: "Confirm Sold",
+      confirmButtonColor: "#198754",
+    });
+
+    if (finalPrice) {
+      try {
+        await axios.put(`${API}/products/sell/${item._id}`, { finalSalePrice: finalPrice });
+        Swal.fire("Sold!", "Item moved to sales history.", "success");
+        fetchData(1, true); // Refresh list
+      } catch (e) {
+        Swal.fire("Error", "Could not process sale", "error");
       }
-    } catch (err) {
-        console.log("err",err)
-      Swal.fire({
-        icon: 'error',
-        title: 'Error',
-        text: 'Failed to load more units',
-        toast: true,
-        position: 'top-end',
-        timer: 2000
-      });
-    } finally {
-      setLoadingModel(null);
     }
   };
 
   const handleDelete = async (id) => {
-    Swal.fire({
-      title: "Are you sure?",
-      text: "This item will be permanently removed.",
-      icon: "warning",
-      showCancelButton: true,
-      confirmButtonColor: "#d33",
-      cancelButtonColor: "#6c757d",
-      confirmButtonText: "Yes, delete it!",
-    }).then(async (result) => {
-      if (result.isConfirmed) {
-        try {
-          await axios.delete(`${API}/products/${id}`);
-          loadInitialData();
-          Swal.fire({
-            title: "Deleted!",
-            icon: "success",
-            timer: 1500,
-            showConfirmButton: false
-          });
-        } catch (e) {
-            console.log("e",e)
-          Swal.fire("Error!", "Failed to delete.", "error");
-        }
-      }
+    const result = await Swal.fire({ 
+        title: "Delete this item?", 
+        icon: "warning",
+        showCancelButton: true, 
+        confirmButtonColor: "#d33" 
     });
+    if (result.isConfirmed) {
+      try {
+        await axios.delete(`${API}/products/${id}`);
+        fetchData(1, true); // Refresh list
+      } catch (e) {
+        Swal.fire("Error", "Delete failed", "error");
+      }
+    }
   };
 
-  // Group by category logic
-  const categoryGrouped = modelGroups.reduce((acc, group) => {
-    const cat = group.category || "General";
-    if (!acc[cat]) acc[cat] = [];
-    acc[cat].push(group);
-    return acc;
-  }, {});
-
   return (
-    <div style={{ height: "85vh", overflowY: "auto", paddingBottom: "20px" }}>
-      {/* --- GLOBAL TOTALS HEADER --- */}
+    <div onScroll={handleScroll} style={{ height: "85vh", overflowY: "auto" }}>
+      {/* STICKY HEADER */}
       <div
-        className="alert alert-primary py-3 sticky-top shadow-sm mb-3 border-0"
+        className="alert alert-primary sticky-top shadow-sm border-0 px-3 py-3"
         style={{ borderRadius: "0 0 15px 15px", backgroundColor: "#0d6efd", color: "white", zIndex: 1020 }}
       >
-        <div className="d-flex justify-content-between align-items-center">
-          <div>
-            <div className="small opacity-75">Total Stock</div>
-            <h4 className="fw-bold mb-0">
-              {dbTotalQty} <small style={{ fontSize: "12px" }}>Units</small>
-            </h4>
+        <div className="row text-center g-0 mb-3">
+          <div className="col-4 border-end border-white border-opacity-25">
+            <small className="opacity-75 d-block">Stock</small>
+            <h6 className="fw-bold mb-0">{stats.totalQty}</h6>
           </div>
-          <div className="text-end">
-            <div className="small opacity-75">Inventory Value</div>
-            <h4 className="fw-bold mb-0">Rs {dbTotalValue.toLocaleString()}</h4>
+          <div className="col-4 border-end border-white border-opacity-25">
+            <small className="opacity-75 d-block">Investment</small>
+            <h6 className="fw-bold mb-0">Rs {stats.totalInvestment.toLocaleString()}</h6>
           </div>
+          <div className="col-4">
+            <small className="opacity-75 d-block">Potential Rev.</small>
+            <h6 className="fw-bold mb-0 text-warning">Rs {stats.totalPotentialRevenue.toLocaleString()}</h6>
+          </div>
+        </div>
+
+        {/* SEARCH & FILTERS */}
+        <input
+          className="form-control form-control-sm mb-2 shadow-sm"
+          placeholder="🔍 Search Model or IMEI..."
+          onChange={e => setSearch(e.target.value)}
+        />
+        <div className="d-flex gap-1">
+          <input
+            type="date"
+            className="form-control form-control-sm shadow-sm"
+            onChange={e => setDates({ ...dates, start: e.target.value })}
+          />
+          <input
+            type="date"
+            className="form-control form-control-sm shadow-sm"
+            onChange={e => setDates({ ...dates, end: e.target.value })}
+          />
+        </div>
+
+        <div className="text-center mt-2 pt-1 border-top border-white border-opacity-10">
+          <small className="opacity-75">Expected Profit: </small>
+          <span className="fw-bold">Rs {(stats.totalPotentialRevenue - stats.totalInvestment).toLocaleString()}</span>
         </div>
       </div>
 
+      {/* PRODUCT LIST */}
+      <div className="p-2">
+        {modelGroups.length === 0 && !loading && (
+            <div className="text-center py-5 text-muted">No items found.</div>
+        )}
+
+        {Object.entries(modelGroups.reduce((acc, g) => {
+            const cat = g.category || "Other";
+            if (!acc[cat]) acc[cat] = [];
+            acc[cat].push(g);
+            return acc;
+        }, {})).map(([category, models]) => (
+            <div key={category} className="mb-3">
+            <div className="text-primary small fw-bold text-uppercase border-bottom mb-2 px-1">{category}</div>
+            {models.map(model => (
+                <div key={model._id} className="mb-2">
+                <div
+                    className="card border-0 shadow-sm py-2 px-3"
+                    onClick={() => setExpandedModel(expandedModel === model._id ? null : model._id)}
+                    style={{ cursor: "pointer", borderRadius: "10px" }}
+                >
+                    <div className="d-flex justify-content-between align-items-center">
+                    <div className="text-capitalize">
+                        <strong>{model._id}</strong> <br />
+                        <span className="badge bg-light text-primary">Qty: {model.totalInModel}</span>
+                    </div>
+                    <div className="text-end text-success fw-bold">Rs {model.totalSellValue.toLocaleString()}</div>
+                    </div>
+                </div>
+
+                {expandedModel === model._id && (
+                    <div className="bg-white border-start border-primary border-3 ms-3 shadow-sm rounded-bottom">
+                    {model.items.map(item => (
+                        <div key={item._id} className="p-2 border-bottom d-flex justify-content-between">
+                        <div>
+                            <div className="small fw-bold">{item.color}</div>
+                            <div className="text-muted" style={{ fontSize: "10px" }}>IMEI: {item.imei}</div>
+                            <div className="text-muted" style={{ fontSize: "10px" }}>Dealer: {item.dealerName}</div>
+                            <div className="text-muted" style={{ fontSize: "10px" }}>Added: {formatDate(item.createdAt)}</div>
+                        </div>
+                        <div className="text-end">
+                            <div className="small text-muted">Cost: {item.purchasePrice}</div>
+                            <div className="d-flex gap-1 mt-1">
+                            <button
+                                onClick={() => handleSell(item)}
+                                className="btn btn-sm btn-success py-0 px-2"
+                            >
+                                Sell
+                            </button>
+                            <button
+                                onClick={() => handleDelete(item._id)}
+                                className="btn btn-sm btn-outline-danger py-0 px-1"
+                            >
+                                🗑️
+                            </button>
+                            </div>
+                        </div>
+                        </div>
+                    ))}
+                    </div>
+                )}
+                </div>
+            ))}
+            </div>
+        ))}
+      </div>
+
       {loading && (
-        <div className="text-center my-5">
-          <div className="spinner-border text-primary" role="status"></div>
-          <p className="mt-2 text-muted">Refreshing Inventory...</p>
+        <div className="text-center py-3">
+          <div className="spinner-border spinner-border-sm text-primary"></div>
         </div>
       )}
-
-      {/* --- RENDER BY CATEGORY & MODEL --- */}
-      {Object.entries(categoryGrouped).map(([category, models]) => (
-        <div key={category} className="mb-4 px-2">
-          <h6 className="text-primary fw-bold text-uppercase small border-bottom pb-1 mb-2 mx-1">{category}</h6>
-
-          {models.map((model) => (
-            <div key={model._id} className="mb-2">
-              <div
-                className="card border-0 shadow-sm"
-                onClick={() => setExpandedModel(expandedModel === model._id ? null : model._id)}
-                style={{ cursor: "pointer", borderRadius: "10px" }}
-              >
-                <div className="card-body py-2 d-flex justify-content-between align-items-center">
-                  <div className="text-capitalize">
-                    <strong style={{ fontSize: "1.05rem" }}>{model._id}</strong> <br />
-                    <span className="badge text-primary" style={{ backgroundColor: "#e7f1ff", fontWeight: "500" }}>
-                      Qty: {model.totalInModel}
-                    </span>
-                  </div>
-                  <div className="text-end">
-                    <div className="text-success fw-bold">Rs {model.totalModelValue.toLocaleString()}</div>
-                    <small className="text-muted text-uppercase" style={{ fontSize: "10px" }}>
-                      {expandedModel === model._id ? "▲ Close" : "▼ View Units"}
-                    </small>
-                  </div>
-                </div>
-              </div>
-
-              {/* EXPANDED SECTION */}
-              {expandedModel === model._id && (
-                <div className="bg-white border-start border-primary border-3 ms-3 me-1 rounded-bottom shadow-sm">
-                  {model.items.map(item => (
-                    <div
-                      key={item._id}
-                      className="d-flex justify-content-between align-items-center p-2 border-bottom small"
-                    >
-                      <div>
-                        <span className="text-capitalize fw-semibold">{item.color || "No Color"}</span>
-                        <div className="text-muted" style={{ fontSize: "10px" }}>IMEI: {item.imei}</div>
-                      </div>
-                      <div className="d-flex align-items-center">
-                        <span className="fw-bold me-2">Rs {item.price.toLocaleString()}</span>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDelete(item._id);
-                          }}
-                          className="btn btn-sm text-danger p-0 px-1"
-                        >
-                          🗑️
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-
-                  {/* PAGINATION */}
-                  {model.items.length < model.totalInModel && (
-                    <div className="p-2 text-center bg-light">
-                      <button
-                        className="btn btn-sm btn-outline-primary rounded-pill px-3 fw-bold"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleLoadMoreUnits(model._id);
-                        }}
-                        disabled={loadingModel === model._id}
-                      >
-                        {loadingModel === model._id
-                          ? <span className="spinner-border spinner-border-sm"></span>
-                          : `Load More (+${model.totalInModel - model.items.length})`
-                        }
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      ))}
     </div>
   );
 }
