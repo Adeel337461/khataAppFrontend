@@ -30,17 +30,17 @@ export default function ProductList() {
     setLoading(true);
     try {
       const res = await axios.get(`${API}/products/grouped`, {
-        params: { 
-            page: pageNum, 
-            search, 
-            startDate: dates.start, 
-            endDate: dates.end 
+        params: {
+          page: pageNum,
+          search,
+          startDate: dates.start,
+          endDate: dates.end,
         },
       });
 
       const newData = res.data.groupedData;
       setStats(res.data.global);
-      
+
       // If it's a new search/filter, replace data. If scrolling, append.
       setModelGroups(prev => isNewSearch ? newData : [...prev, ...newData]);
       setHasMore(newData.length === 5);
@@ -68,10 +68,10 @@ export default function ProductList() {
   };
 
   const formatDate = (date) =>
-    new Date(date).toLocaleDateString("en-GB", { 
-        day: "numeric", 
-        month: "long", 
-        year: "numeric" 
+    new Date(date).toLocaleDateString("en-GB", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
     });
 
   const handleSell = async (item) => {
@@ -98,11 +98,11 @@ export default function ProductList() {
   };
 
   const handleDelete = async (id) => {
-    const result = await Swal.fire({ 
-        title: "Delete this item?", 
-        icon: "warning",
-        showCancelButton: true, 
-        confirmButtonColor: "#d33" 
+    const result = await Swal.fire({
+      title: "Delete this item?",
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonColor: "#d33",
     });
     if (result.isConfirmed) {
       try {
@@ -111,6 +111,28 @@ export default function ProductList() {
       } catch (e) {
         Swal.fire("Error", "Delete failed", "error");
       }
+    }
+  };
+  const handleLoan = async (item) => {
+    const { value: formValues } = await Swal.fire({
+      title: "Process Loan",
+      html: `<input id="custName" class="swal2-input" placeholder="Customer Name">`
+        + `<input id="finalPrice" type="number" class="swal2-input" placeholder="Total Sale Price" value="${item.sellPrice}">`
+        + `<input id="paidAmount" type="number" class="swal2-input" placeholder="Initial Deposit">`,
+      focusConfirm: false,
+      preConfirm: () => {
+        return {
+          customerName: document.getElementById("custName").value,
+          finalSalePrice: document.getElementById("finalPrice").value,
+          amountPaid: document.getElementById("paidAmount").value,
+        };
+      },
+    });
+
+    if (formValues && formValues.customerName) {
+      await axios.put(`${API}/products/loan/${item._id}`, formValues);
+      Swal.fire("Loan Recorded", "", "success");
+      fetchData(1, true);
     }
   };
 
@@ -156,75 +178,79 @@ export default function ProductList() {
         </div>
 
         <div className="text-center mt-2 pt-1 border-top border-white border-opacity-10">
-          <small className="opacity-75">Expected Profit: </small>
+          <small className="opacity-75">Expected Profit:</small>
           <span className="fw-bold">Rs {(stats.totalPotentialRevenue - stats.totalInvestment).toLocaleString()}</span>
         </div>
       </div>
 
       {/* PRODUCT LIST */}
       <div className="p-2">
-        {modelGroups.length === 0 && !loading && (
-            <div className="text-center py-5 text-muted">No items found.</div>
-        )}
+        {modelGroups.length === 0 && !loading && <div className="text-center py-5 text-muted">No items found.</div>}
 
         {Object.entries(modelGroups.reduce((acc, g) => {
-            const cat = g.category || "Other";
-            if (!acc[cat]) acc[cat] = [];
-            acc[cat].push(g);
-            return acc;
+          const cat = g.category || "Other";
+          if (!acc[cat]) acc[cat] = [];
+          acc[cat].push(g);
+          return acc;
         }, {})).map(([category, models]) => (
-            <div key={category} className="mb-3">
+          <div key={category} className="mb-3">
             <div className="text-primary small fw-bold text-uppercase border-bottom mb-2 px-1">{category}</div>
             {models.map(model => (
-                <div key={model._id} className="mb-2">
+              <div key={model._id} className="mb-2">
                 <div
-                    className="card border-0 shadow-sm py-2 px-3"
-                    onClick={() => setExpandedModel(expandedModel === model._id ? null : model._id)}
-                    style={{ cursor: "pointer", borderRadius: "10px" }}
+                  className="card border-0 shadow-sm py-2 px-3"
+                  onClick={() => setExpandedModel(expandedModel === model._id ? null : model._id)}
+                  style={{ cursor: "pointer", borderRadius: "10px" }}
                 >
-                    <div className="d-flex justify-content-between align-items-center">
+                  <div className="d-flex justify-content-between align-items-center">
                     <div className="text-capitalize">
-                        <strong>{model._id}</strong> <br />
-                        <span className="badge bg-light text-primary">Qty: {model.totalInModel}</span>
+                      <strong>{model._id}</strong> <br />
+                      <span className="badge bg-light text-primary">Qty: {model.totalInModel}</span>
                     </div>
                     <div className="text-end text-success fw-bold">Rs {model.totalSellValue.toLocaleString()}</div>
-                    </div>
+                  </div>
                 </div>
 
                 {expandedModel === model._id && (
-                    <div className="bg-white border-start border-primary border-3 ms-3 shadow-sm rounded-bottom">
+                  <div className="bg-white border-start border-primary border-3 ms-3 shadow-sm rounded-bottom">
                     {model.items.map(item => (
-                        <div key={item._id} className="p-2 border-bottom d-flex justify-content-between">
+                      <div key={item._id} className="p-2 border-bottom d-flex justify-content-between">
                         <div>
-                            <div className="small fw-bold">{item.color}</div>
-                            <div className="text-muted" style={{ fontSize: "10px" }}>IMEI: {item.imei}</div>
-                            <div className="text-muted" style={{ fontSize: "10px" }}>Dealer: {item.dealerName}</div>
-                            <div className="text-muted" style={{ fontSize: "10px" }}>Added: {formatDate(item.createdAt)}</div>
+                          <div className="small fw-bold">{item.color}</div>
+                          <div className="text-muted" style={{ fontSize: "10px" }}>IMEI: {item.imei}</div>
+                          <div className="text-muted" style={{ fontSize: "10px" }}>Dealer: {item.dealerName}</div>
+                          <div className="text-muted" style={{ fontSize: "10px" }}>
+                            Added: {formatDate(item.createdAt)}
+                          </div>
                         </div>
                         <div className="text-end">
-                            <div className="small text-muted">Cost: {item.purchasePrice}</div>
-                            <div className="d-flex gap-1 mt-1">
+                          <div className="small text-muted">Cost: {item.purchasePrice}</div>
+                          <div className="d-flex gap-1 mt-1">
                             <button
-                                onClick={() => handleSell(item)}
-                                className="btn btn-sm btn-success py-0 px-2"
+                              onClick={() =>
+                                handleSell(item)}
+                              className="btn btn-sm btn-success py-0 px-2"
                             >
-                                Sell
+                              Sell
                             </button>
+                              <button onClick={() => handleLoan(item)} className="btn btn-sm btn-warning py-0 px-2 ms-1">Loan</button>
+
                             <button
-                                onClick={() => handleDelete(item._id)}
-                                className="btn btn-sm btn-outline-danger py-0 px-1"
+                              onClick={() =>
+                                handleDelete(item._id)}
+                              className="btn btn-sm btn-outline-danger py-0 px-1"
                             >
-                                🗑️
+                              🗑️
                             </button>
-                            </div>
+                          </div>
                         </div>
-                        </div>
+                      </div>
                     ))}
-                    </div>
+                  </div>
                 )}
-                </div>
+              </div>
             ))}
-            </div>
+          </div>
         ))}
       </div>
 
